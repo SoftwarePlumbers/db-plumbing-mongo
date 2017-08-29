@@ -8,7 +8,7 @@ const Ops = Patch.Operations;
 
 //const PATCH_OPTS = { map:true, key: e=>e.uid, value: e=>e, entry: (k,v)=>v }
 
-function withDebug(a) { debug(a); return a; }
+function inlineDebug(msg) {  return a => { debug(msg, a); return a; }  }
 
 class Simple { 
     constructor(uid, a, b) { this.uid = uid; this.a=a; this.b=b; } 
@@ -29,9 +29,10 @@ function getStore() {
 
 describe('Store', () => {
 
-    beforeEach(() => {
+    beforeEach((done) => {
         MongoClient.connect(TEST_URL)
-            .then(db => db.dropCollection(TEST_COLLECTION));
+            .then(db => db.dropCollection(TEST_COLLECTION))
+            .then(() => done(), done)
     });
 
 
@@ -39,7 +40,7 @@ describe('Store', () => {
         let store = getStore();
             store.update(new Simple(1,'hello','world'))
                 .then(() => store.find(1))
-                .then(withDebug)
+                .then(inlineDebug('found'))
                 .then(result=> {
                         expect(result.a).to.equal('hello');
                         expect(result.b).to.equal('world');
@@ -47,6 +48,26 @@ describe('Store', () => {
                 .then(()=>done(), done);
             
     });
+
+    it('creates updates and retrieves test object in store', (done) => {
+        let store = getStore();
+            store.update(new Simple(1,'hello','world'))
+                .then(() => store.find(1))
+                .then(inlineDebug('found'))
+                .then(result=> {
+                        expect(result.a).to.equal('hello');
+                        expect(result.b).to.equal('world');
+                    })
+                .then(() => store.update(new Simple(1, 'cruel', 'world')))
+                .then(() => store.find(1))
+                .then(inlineDebug('found'))
+                .then(result=> {
+                        expect(result.a).to.equal('cruel');
+                        expect(result.b).to.equal('world');
+                    })
+                .then(()=>done(), done);
+    });
+
 
     it('creates multiple objects in store and finds by index', (done) => {
 
@@ -60,6 +81,23 @@ describe('Store', () => {
                         expect(result).to.have.length(2);
                         expect(result[0].b).to.equal('world');
                         expect(result[1].b).to.equal('friend');
+                    })
+                .then(()=>done(), done);
+    });
+
+    it('creates multiple objects in store and deletes by index', (done) => {
+
+        let store = getStore();
+            
+        store.update(new Simple(1,'hello','world'))
+                .then(() => store.update(new Simple(2, 'hello','friend')))
+                .then(() => store.update(new Simple(3, 'goodbye', 'Mr. Chips')))
+                .then(() => store.removeAll(byA, 'hello'))
+                .then(() => store.all)
+                .then(result => {
+                        expect(result).to.have.length(1);
+                        expect(result[0].a).to.equal('goodbye');
+                        expect(result[0].b).to.equal('Mr. Chips');
                     })
                 .then(()=>done(), done);
     });
@@ -85,7 +123,7 @@ describe('Store', () => {
                 .then(() => store.update(new Simple(3, 'goodbye', 'Mr. Chips')))
                 .then(() => store.bulk(new Ops.Map([ [1, new Ops.Mrg( { b: new Ops.Rpl('pizza') } ) ]])))
                 .then(() => store.find(1))
-                .then(withDebug)
+                .then(inlineDebug('found'))
                 .then(result=> {
                         expect(result.b).to.equal('pizza');
                     })
