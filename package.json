@@ -1,10 +1,10 @@
 {
   "name": "db-plumbing-mongo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Simple database interface to mongo, compatible with db-plumbing-map",
   "main": "store.js",
   "scripts": {
-    "test": "DEBUG=db-plumbing-mongo~tests mocha",
+    "test": "mocha",
     "docs": "jsdoc -c ./jsdoc.conf -d build/docs -t ./node_modules/ink-docstrap/template README.md *.js",
     "lint": "./node_modules/.bin/eslint --format unix *.js; exit 0"
   },

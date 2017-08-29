@@ -253,5 +253,5 @@ class Client {
 
 
 /** the public API of this module. */
-module.exports = { Store, Client };
+module.exports = { Store, Client, IndexMap };
 
