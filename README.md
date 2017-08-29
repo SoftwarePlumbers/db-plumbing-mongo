@@ -1,4 +1,4 @@
-# ![Software Plumbers](http://docs.softwareplumbers.com/common/img/SquareIdent-160.png) DB Plumbing (Map)
+# ![Software Plumbers](http://docs.softwareplumbers.com/common/img/SquareIdent-160.png) DB Plumbing (Mongo)
 
 Mongo database wrapper compatible with db-plumbing-map and db-plumbing-rest.
 
