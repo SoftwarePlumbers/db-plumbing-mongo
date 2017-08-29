@@ -15,20 +15,42 @@ function mongoCallback(resolve, reject) {
     return (err, res) => { if (err) { console.warn('mongo error', err); reject(err); } else resolve(res); };
 }
 
-
-//function logInline(res) { debug(res); return res; }
-
+/** Metadata about indexes.
+ *
+ * The generic store interface supports a findAll(index, value) operation that returns a dataset dependent on index
+ * and value. Index is, by convention, an named function (value, item) => boolean and the result of store.findAll(index,value)
+ * should be equal to store.all().filter(item => index(value, item)).
+ *
+ * An IndexMap maps the named fuction above to a different function which instead takes a value and outputs an appropriate
+ * mongodb query. The implementations of findAll and removeAll use this mongodb query to identify records, instead of 
+ * performing a linear search.
+ *
+ * Currently only simple single-field indexes are supported by IndexMap. The intention is to support compound indexes
+ * also.
+ */
 class IndexMap {
     
     constructor() {
         this.maps = {};
     }
 
+    /** Tell the Mongo client about a simple index.
+     *
+     * @param index {Function} a named function (value,item)=>boolean that filters items in a store
+     * @param name {String} the name of a field in mongodb for which item.field == value is equivalent to index
+     * @returns this Indexmap (for fuent construction)
+     */
     addSimpleField(index, name) {
         this.maps[index.name] = value => Object.defineProperty({}, name, { value: value, enumerable: true, writable: false });
         return this;
     }
 
+    /** Convert an index and value to mongodb criteria 
+    *
+    * @param index {Function} an index filter previously added to this map
+    * @value value to filter on
+    * @returns a monogodb query that will filter items identically to the supplied filter function
+    */
     toMongoCriteria(index, value) {
         let map = this.maps[index.name];
         if (map === undefined) throw new Error('mongo does not understand index ' + index.name);
@@ -42,10 +64,11 @@ const DEFAULT_OPTIONS = {
     entry: (_id, data) => Object.assign({}, data, {_id}) // how to make a key/value pair to an entry
 };
 
-/** In-memory document store.
+/** MongoDB document store.
  *
- * Essentially just some utility functions wrapping an ES6 Map. Other implementations (db-plumbing-mongo etc) have the
- * same signature and should work as a drop-in replacement.
+ * Wraps the mongo interface in a simple but powerful interface. As well as the standard CRUD ops, a Store
+ * supports a bulk operation that takes a typed-patch Map operation. This can be used to efficiently express
+ * a range of complex update operations, and can be used to sync one store with data held in another store.
  */
 class Store {
 
@@ -79,7 +102,7 @@ class Store {
     * @param type {Function} a constructor (perhaps a base class constructor) for elements in this store.
     * @param indexes {IndexMap} an IndexMap object that tells mongo how to handle searches on non-ids.
     */ 
-    constructor(collection, type, indexes,  options = DEFAULT_OPTIONS) {
+    constructor(collection, type = Object, indexes = new IndexMap(),  options = DEFAULT_OPTIONS) {
 
         console.assert(collection && typeof collection === 'object', 'collection must be an object');
         console.assert(type && typeof type === 'function','type must be a constructor');
@@ -121,6 +144,11 @@ class Store {
     }
 
     /** Find objects by index
+    *
+    * Index is, by convention, an named function (value, item) => boolean and the result of store.findAll(index,value)
+    * should be equivalent to store.all().filter(item => index(value, item)). However, other implementations of store
+    * may optimize this algorithm to use a better algorithm than a simple linear search. The distinct 'findAll' method
+    * allows for that.
     *
     * @param index {Function} A function that takes a value and a stored object and returns true or false
     * @returns A promise of an array containing all elements for which the function returns true for the given value
@@ -181,6 +209,7 @@ class Store {
                     collection.remove(this.indexes.toMongoCriteria(index,value), {w: 1}, mongoCallback(resolve, reject))));
     }
 
+    /** Internal function that updates an individual record using a typed-patch Mrg operation */
     _updateFromDiff(_id, diff) {
         const mongoQuery = Store.diffToMongo(diff.data);
         debug('_updateFromDiff', _id, mongoQuery);
@@ -190,6 +219,7 @@ class Store {
                     collection.updateOne({ _id }, mongoQuery, {w : 1}, mongoCallback(resolve, reject))));    
     }
 
+    /** Internal function that removes documents with the supplied ids from the collection */
     _bulkRemove(ids) {
         return this.collection
             .then(collection => 
@@ -197,6 +227,7 @@ class Store {
                     collection.deleteMany({ _id: { $in: ids }}, {w : 1}, mongoCallback(resolve, reject))));    
     }
 
+    /** Internal function that inserts each item in the supplied array into the collection */
     _bulkInsert(items) {
         return this.collection
             .then(collection =>
@@ -239,12 +270,25 @@ class Store {
     }
 }
 
+/** Encapsulates a mongodb database connection.
+ */
 class Client {
 
+    /** Constuctor
+     *
+     * @param url {String} URL for the mongodb database (including port and db name)
+     */
     constructor(url) {
         this.db = new Promise( (resolve, reject) => MongoClient.connect(url, mongoCallback(resolve, reject) ) );
     }
 
+    /** Get a store representing the given collection that returns objects of the given type.
+     *
+     * @param collection {String} mongodb collection name
+     * @param type {Function} constructor for contained objects (defaults to Object)
+     * @param indexes {IndexMap} indexes (defaults to an empty IndexMap)
+     * @param options Overide default options.z
+     */
     getStore(collection, type, indexes, options) {
         return new Store(this.db.then(db => db.collection(collection)), type, indexes, options);
     }
