@@ -4,16 +4,11 @@
 'use strict';
 
 const { MongoClient } = require('mongodb');
-
-const debug = require('debug')('db-plumbing-mongo');
-
 const { DoesNotExist } = require('db-plumbing-map');
 const { Operations } = require('typed-patch');
 
-/** Convert mongo callbacks into a promise */
-function mongoCallback(resolve, reject) {
-    return (err, res) => { if (err) { console.warn('mongo error', err); reject(err); } else resolve(res); };
-}
+const debug = require('debug')('db-plumbing-mongo');
+
 
 /** Metadata about indexes.
  *
@@ -122,8 +117,7 @@ class Store {
     find(_id) { 
         debug('find', _id);
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => collection.findOne({_id}, mongoCallback(resolve,reject))))
+            .then(collection => collection.findOne({_id}))
             .then(item => { 
                 if (item === null) throw new DoesNotExist(_id); 
                 return this.type.fromJSON(this.options.value(item)); 
@@ -137,9 +131,7 @@ class Store {
     get all() {
         debug('all');
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => 
-                    collection.find().toArray(mongoCallback(resolve,reject) ) ) )
+            .then(collection => collection.find().toArray())
             .then(items => items.map(item => this.type.fromJSON(this.options.value(item))));
     }
 
@@ -157,8 +149,7 @@ class Store {
         debug('findAll', index, value);
         let mongo_criteria = this.indexes.toMongoCriteria(index,value);
         return this.collection
-            .then(collection =>
-                new Promise( (resolve,reject) => collection.find(mongo_criteria).toArray(mongoCallback(resolve,reject))))
+            .then(collection => collection.find(mongo_criteria).toArray())
             .then(items => items.map(item => this.type.fromJSON(this.options.value(item))));
     }
 
@@ -171,13 +162,10 @@ class Store {
         debug('Update',object);
         let _id = this.options.key(object);
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => 
-                    collection.updateOne(
+            .then(collection => collection.updateOne(
                         { _id }, 
                         this.options.entry(_id,object), 
-                        {w : 1, upsert: true}, 
-                        mongoCallback(resolve, reject))));
+                        {w : 1, upsert: true}));
             
     }
 
@@ -188,9 +176,7 @@ class Store {
     */
     remove(_id)  { 
         return this.collection
-            .then(collection =>
-                new Promise( (resolve,reject) => 
-                    collection.deleteOne({_id}, {w: 1}, mongoCallback(resolve, reject))))
+            .then(collection => collection.deleteOne({_id}, {w: 1}))
             .then(result => { 
                 if (result.deletedCount != 1) debug('bad delete count', result.deletedCount); 
                 return result; 
@@ -204,9 +190,7 @@ class Store {
     */ 
     removeAll(index, value) {
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => 
-                    collection.remove(this.indexes.toMongoCriteria(index,value), {w: 1}, mongoCallback(resolve, reject))));
+            .then(collection => collection.remove(this.indexes.toMongoCriteria(index,value), {w: 1}));
     }
 
     /** Internal function that updates an individual record using a typed-patch Mrg operation */
@@ -214,25 +198,19 @@ class Store {
         const mongoQuery = Store.diffToMongo(diff.data);
         debug('_updateFromDiff', _id, mongoQuery);
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => 
-                    collection.updateOne({ _id }, mongoQuery, {w : 1}, mongoCallback(resolve, reject))));    
+            .then(collection => collection.updateOne({ _id }, mongoQuery, {w : 1}));    
     }
 
     /** Internal function that removes documents with the supplied ids from the collection */
     _bulkRemove(ids) {
         return this.collection
-            .then(collection => 
-                new Promise( (resolve,reject) => 
-                    collection.deleteMany({ _id: { $in: ids }}, {w : 1}, mongoCallback(resolve, reject))));    
+            .then(collection => collection.deleteMany({ _id: { $in: ids }}, {w : 1}));    
     }
 
     /** Internal function that inserts each item in the supplied array into the collection */
     _bulkInsert(items) {
         return this.collection
-            .then(collection =>
-                new Promise( (resolve,reject) => 
-                    collection.insertMany(items, {w : 1}, mongoCallback(resolve, reject))));    
+            .then(collection => collection.insertMany(items, {w : 1}));    
     }
 
     /** Execute multiple update operations on the store
@@ -279,7 +257,7 @@ class Client {
      * @param url {String} URL for the mongodb database (including port and db name)
      */
     constructor(url) {
-        this.db = new Promise( (resolve, reject) => MongoClient.connect(url, mongoCallback(resolve, reject) ) );
+        this.db = MongoClient.connect(url);
     }
 
     /** Get a store representing the given collection that returns objects of the given type.
