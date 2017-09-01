@@ -69,6 +69,10 @@ class Store {
 
     static get DoesNotExist() { return DoesNotExist; }
 
+    /** Recursively concert a typed-patch Mrg operation into a mongo updaate instructions
+     *
+     * TODO: make this work for array elements.
+     */
     static _diffToMongo(diff, mongo, context) {
         for (let name in diff) {
             let property = diff[name];
@@ -163,9 +167,9 @@ class Store {
         let _id = this.options.key(object);
         return this.collection
             .then(collection => collection.updateOne(
-                        { _id }, 
-                        this.options.entry(_id,object), 
-                        {w : 1, upsert: true}));
+                { _id }, 
+                this.options.entry(_id,object), 
+                {w : 1, upsert: true}));
             
     }
 
@@ -275,5 +279,5 @@ class Client {
 
 
 /** the public API of this module. */
-module.exports = { Store, Client, IndexMap };
+module.exports = { Store, Client, IndexMap, DoesNotExist };
 

@@ -1,6 +1,6 @@
 {
   "name": "db-plumbing-mongo",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Simple database interface to mongo, compatible with db-plumbing-map",
   "main": "store.js",
   "scripts": {
@@ -32,7 +32,7 @@
     "mocha": "^3.5.0"
   },
   "dependencies": {
-    "db-plumbing-map": "^0.1.2",
+    "db-plumbing-map": "^0.1.4",
     "debug": "^3.0.1",
     "mongodb": "^2.2.31",
     "typed-patch": "^0.2.5"
