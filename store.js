@@ -9,6 +9,8 @@ const { Operations } = require('typed-patch');
 
 const debug = require('debug')('db-plumbing-mongo');
 
+function withDebug(msg, val) { debug(msg, val); return val }
+
 
 /** Metadata about indexes.
  *
@@ -47,9 +49,10 @@ class IndexMap {
     * @returns a monogodb query that will filter items identically to the supplied filter function
     */
     toMongoCriteria(index, value) {
+        debug('toMongoCriteria', index, value);
         let map = this.maps[index.name];
         if (map === undefined) throw new Error('mongo does not understand index ' + index.name);
-        return map(value);
+        return withDebug('toMongoCriteria - returns',map(value));
     }
 }
 
