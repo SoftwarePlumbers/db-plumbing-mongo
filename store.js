@@ -70,8 +70,6 @@ const DEFAULT_OPTIONS = {
  */
 class Store {
 
-    static get DoesNotExist() { return DoesNotExist; }
-
     /** Recursively concert a typed-patch Mrg operation into a mongo updaate instructions
      *
      * TODO: make this work for array elements.
@@ -79,11 +77,11 @@ class Store {
     static _diffToMongo(diff, mongo, context) {
         for (let name in diff) {
             let property = diff[name];
-            if (property instanceof Operations.Rpl) 
+            if (property.isA(Operations.Rpl)) 
                 mongo.$set[context + name] = property.data;
-            else if (property === Operations.DEL) 
+            else if (property.isA(Operations.Del)) 
                 mongo.$unset[context + name] = '';
-            else if (property instanceof Operations.Mrg) 
+            else if (property.isA(Operations.Mrg)) 
                 Store.diffToMongo(diff[property].data, mongo, context + property + '.');
         }
         return mongo;
@@ -108,7 +106,7 @@ class Store {
 
         console.assert(collection && typeof collection === 'object', 'collection must be an object');
         console.assert(type && typeof type === 'function','type must be a constructor');
-        console.assert(indexes && typeof indexes === 'object' && indexes instanceof IndexMap, 'indexes must be an instance of IndexMap');
+        console.assert(indexes && typeof indexes === 'object' && indexes.constructor.name === IndexMap.name, 'indexes must be an instance of IndexMap');
 
         this.collection = Promise.resolve(collection); // It doesn't matter if collection wasn't a promise - it is now.
         this.type = type;
@@ -226,20 +224,24 @@ class Store {
     * @see [Typed Patch](https://www.npmjs.com/package/typed-patch)
     */
     bulk(patch) {
-        console.assert(patch instanceof Operations.Map, 'Store only understands map diffs');
         debug('MongoClient - bulk', patch);
-        let deletes = [];
+        // Sigh. commonJS really really sucks when it comes to breaking instanceof.
+        // just when I was starting to like javascript, I find out quite how badly fucked up it is.
+        // I just don't have time to go through every fucking require statement in my entire codebase
+        // to try and figure out why 'instanceof' sometimes fails here.
+        console.assert(patch.isA(Operations.Map), 'Store only understands map diffs');
+       let deletes = [];
         let inserts = [];
         let updates = Promise.resolve();
         for (let [key,op] of patch.data) {
             debug('update', key, op);
             // TODO: Handle Rpl?
-            if (op instanceof Operations.Mrg) {
+            if (op.isA(Operations.Mrg)) {
                 updates = updates.then( () => this._updateFromDiff(key, op) );
-            } else if (op instanceof Operations.Ins) {
+            } else if (op.isA(Operations.Ins)) {
                 debug('queueing insert', op);
                 inserts.push(this.type.fromJSON(op.data));
-            } else if (op === Operations.DEL) {
+            } else if (op.isA(Operations,Del)) {
                 debug('queueing delete', op);
                 deletes.push(key);
             } else {
