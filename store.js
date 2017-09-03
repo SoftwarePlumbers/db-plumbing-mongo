@@ -241,7 +241,7 @@ class Store {
             } else if (op.isA(Operations.Ins)) {
                 debug('queueing insert', op);
                 inserts.push(this.type.fromJSON(op.data));
-            } else if (op.isA(Operations,Del)) {
+            } else if (op.isA(Operations.Del)) {
                 debug('queueing delete', op);
                 deletes.push(key);
             } else {
