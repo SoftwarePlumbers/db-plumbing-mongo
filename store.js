@@ -5,56 +5,15 @@
 
 const { MongoClient } = require('mongodb');
 const { DoesNotExist } = require('db-plumbing-map');
-const { Operations } = require('typed-patch');
+const { Patch, Operations } = require('typed-patch');
+const { AsyncStream } = require('iterator-plumbing');
+const { Query, $ } = require('abstract-query');
+const { MONGO } = require('mongo-query-format');
 
 const debug = require('debug')('db-plumbing-mongo');
 
 function withDebug(msg, val) { debug(msg, val); return val }
 
-
-/** Metadata about indexes.
- *
- * The generic store interface supports a findAll(index, value) operation that returns a dataset dependent on index
- * and value. Index is, by convention, an named function (value, item) => boolean and the result of store.findAll(index,value)
- * should be equal to store.all().filter(item => index(value, item)).
- *
- * An IndexMap maps the named fuction above to a different function which instead takes a value and outputs an appropriate
- * mongodb query. The implementations of findAll and removeAll use this mongodb query to identify records, instead of 
- * performing a linear search.
- *
- * Currently only simple single-field indexes are supported by IndexMap. The intention is to support compound indexes
- * also.
- */
-class IndexMap {
-    
-    constructor() {
-        this.maps = {};
-    }
-
-    /** Tell the Mongo client about a simple index.
-     *
-     * @param index {Function} a named function (value,item)=>boolean that filters items in a store
-     * @param name {String} the name of a field in mongodb for which item.field == value is equivalent to index
-     * @returns this Indexmap (for fuent construction)
-     */
-    addSimpleField(index, name) {
-        this.maps[index.name] = value => Object.defineProperty({}, name, { value: value, enumerable: true, writable: false });
-        return this;
-    }
-
-    /** Convert an index and value to mongodb criteria 
-    *
-    * @param index {Function} an index filter previously added to this map
-    * @value value to filter on
-    * @returns a monogodb query that will filter items identically to the supplied filter function
-    */
-    toMongoCriteria(index, value) {
-        debug('toMongoCriteria', index, value);
-        let map = this.maps[index.name];
-        if (map === undefined) throw new Error('mongo does not understand index ' + index.name);
-        return withDebug('toMongoCriteria - returns',map(value));
-    }
-}
 
 const DEFAULT_OPTIONS = {
     key: value => value.uid,    // How to find a key from a value
@@ -96,23 +55,27 @@ class Store {
         return mongo;
     }
 
+    static streamFromCursor(promise) {
+        return new AsyncStream({
+            next: ()=>promise.then(cursor=>cursor.next().then(value => ({ done: value===null, value }))) 
+        });
+    }
+
     /** Constructor.
     * 
     * Create a store that records objects of the given type in the supplied mongodb collection.
     *
     * @param collection A mongodb collection or a promise thereof
     * @param type {Function} a constructor (perhaps a base class constructor) for elements in this store.
-    * @param indexes {IndexMap} an IndexMap object that tells mongo how to handle searches on non-ids.
+    * @param [options = DEFAULT_OPTIONS] options
     */ 
-    constructor(collection, type = Object, indexes = new IndexMap(),  options = DEFAULT_OPTIONS) {
+    constructor(collection, type = Object, options = DEFAULT_OPTIONS) {
 
         console.assert(collection && typeof collection === 'object', 'collection must be an object');
         console.assert(type && typeof type === 'function','type must be a constructor');
-        console.assert(indexes && typeof indexes === 'object' && indexes instanceof IndexMap, 'indexes must be an instance of IndexMap');
 
         this.collection = Promise.resolve(collection); // It doesn't matter if collection wasn't a promise - it is now.
         this.type = type;
-        this.indexes = indexes;
         this.options = options;
     }
 
@@ -137,27 +100,23 @@ class Store {
     */
     get all() {
         debug('all');
-        return this.collection
-            .then(collection => collection.find().toArray())
-            .then(items => items.map(item => this.type.fromJSON(this.options.value(item))));
+        return Store.streamFromCursor(this.collection.then(coll=>coll.find()))
+            .map(item => this.type.fromJSON(this.options.value(item)));
     }
 
-    /** Find objects by index
+    /** Find objects by query
     *
-    * Index is, by convention, an named function (value, item) => boolean and the result of store.findAll(index,value)
-    * should be equivalent to store.all().filter(item => index(value, item)). However, other implementations of store
-    * may optimize this algorithm to use a better algorithm than a simple linear search. The distinct 'findAll' method
-    * allows for that.
+    * @see [Abstract Query](https://www.npmjs.com/package/abstract-query)
     *
-    * @param index {Function} A function that takes a value and a stored object and returns true or false
-    * @returns A promise of an array containing all elements for which the function returns true for the given value
+    * @param query {Query} a query object
+    * @param [parameters] {Object} parameters for the query
+    * @returns An async stream containing all elements for which the query predicate returns true for the given parameters
     */ 
-    findAll(index, value)  { 
-        debug('findAll', index, value);
-        let mongo_criteria = this.indexes.toMongoCriteria(index,value);
-        return this.collection
-            .then(collection => collection.find(mongo_criteria).toArray())
-            .then(items => items.map(item => this.type.fromJSON(this.options.value(item))));
+    findAll(query, parameters = {})  { 
+        debug('findAll', query, parameters);
+        let mongo_criteria = query.bind(parameters).toExpression(MONGO);
+        return Store.streamFromCursor(this.collection.then(coll=>coll.find(mongo_criteria)))
+            .map(item => this.type.fromJSON(this.options.value(item)));
     }
 
     /** Update or add an object in the store.
@@ -190,17 +149,22 @@ class Store {
             });
     }
 
-    /** Remove multiple objects from the store
+    /** Remove multiple objects from the store.
     *
-    * @param index {Function} a function that takes a value and an object from the store and returns true or false
-    * @param a value that determines which objects are removed.
+    * @see [Abstract Query](https://www.npmjs.com/package/abstract-query)
+    *
+    * @param query {Query} a Query 
+    * @param [parameters] {Object} optional parameters for query
     */ 
-    removeAll(index, value) {
+    removeAll(query, parameters = {}) {
+        let mongo_criteria = query.bind(parameters).toExpression(MONGO);
         return this.collection
-            .then(collection => collection.remove(this.indexes.toMongoCriteria(index,value), {w: 1}));
+            .then(collection => collection.remove(mongo_criteria, {w: 1}));
     }
 
-    /** Internal function that updates an individual record using a typed-patch Mrg operation */
+    /** Internal function that updates an individual record using a typed-patch Mrg operation
+    * @private 
+    */
     _updateFromDiff(_id, diff) {
         const mongoQuery = Store.diffToMongo(diff.data);
         debug('_updateFromDiff', _id, mongoQuery);
@@ -208,13 +172,17 @@ class Store {
             .then(collection => collection.updateOne({ _id }, mongoQuery, {w : 1}));    
     }
 
-    /** Internal function that removes documents with the supplied ids from the collection */
+    /** Internal function that removes documents with the supplied ids from the collection 
+    * @private 
+    */
     _bulkRemove(ids) {
         return this.collection
             .then(collection => collection.deleteMany({ _id: { $in: ids }}, {w : 1}));    
     }
 
-    /** Internal function that inserts each item in the supplied array into the collection */
+    /** Internal function that inserts each item in the supplied array into the collection 
+    * @private 
+    */
     _bulkInsert(items) {
         return this.collection
             .then(collection => collection.insertMany(items, {w : 1}));    
@@ -282,5 +250,5 @@ class Client {
 
 
 /** the public API of this module. */
-module.exports = { Store, Client, IndexMap, DoesNotExist };
+module.exports = { Store, Query, $, Patch, Operations, Client, DoesNotExist };
 

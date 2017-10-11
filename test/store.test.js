@@ -1,36 +1,34 @@
 
-const { Store, Client, IndexMap } = require( '../store');
-const Patch = require('typed-patch');
+const { Store, Query, $, Patch, Operations, Client, IndexMap } = require( '../store');
 const expect = require('chai').expect;
 const debug = require('debug')('db-plumbing-mongo~tests');
 const { MongoClient } = require('mongodb');
-const Ops = Patch.Operations;
+const Ops = Operations;
+
+require('dotenv').config();
 
 //const PATCH_OPTS = { map:true, key: e=>e.uid, value: e=>e, entry: (k,v)=>v }
 
 function inlineDebug(msg) {  return a => { debug(msg, a); return a; }  }
 
 class Simple { 
-    constructor(uid, a, b) { this.uid = uid; this.a=a; this.b=b; } 
-    static fromJSON({uid,a,b}) { return new Simple(uid,a,b); }
+    constructor(uid, a, b, tags) { this.uid = uid; this.a=a; this.b=b; this.tags = tags} 
+    static fromJSON({uid,a,b,tags}) { return new Simple(uid,a,b,tags); }
 }
 
-function byA(a, simple) { return simple.a == a; }
+const byA = Query.from( { a : $.a } );
+//const byTag = Query.from( { tags: { $has: $.tag } } );
 
-const INDEX_MAP = new IndexMap().addSimpleField(byA, "a");
 const TEST_COLLECTION = 'testsimple';
 
-const TEST_URL = 'mongodb://mongo1.softwareplumbers.net:27017/maximally-me';
-
 function getStore() {
-     return new Client(TEST_URL).getStore(TEST_COLLECTION, Simple, INDEX_MAP);
+     return new Client(process.env.DATABASE_URL).getStore(TEST_COLLECTION, Simple);
 }
-
 
 describe('Store', () => {
 
     beforeEach((done) => {
-        MongoClient.connect(TEST_URL)
+        MongoClient.connect(process.env.DATABASE_URL)
             .then(db => db.dropCollection(TEST_COLLECTION))
             .then(() => done(), done)
     });
@@ -69,14 +67,14 @@ describe('Store', () => {
     });
 
 
-    it('creates multiple objects in store and finds by index', (done) => {
+    it('creates multiple objects in store and finds by simple index', (done) => {
 
         let store = getStore();
             
         store.update(new Simple(1,'hello','world'))
                 .then(() => store.update(new Simple(2, 'hello','friend')))
                 .then(() => store.update(new Simple(3, 'goodbye', 'Mr. Chips')))
-                .then(() => store.findAll(byA, 'hello'))
+                .then(() => store.findAll(byA, {a:'hello'}).toArray())
                 .then(result=> {
                         expect(result).to.have.length(2);
                         expect(result[0].b).to.equal('world');
@@ -84,16 +82,32 @@ describe('Store', () => {
                     })
                 .then(()=>done(), done);
     });
+/*
+    it('creates multiple objects in store and finds by array field index', (done) => {
 
-    it('creates multiple objects in store and deletes by index', (done) => {
+        let store = getStore();
+            
+        store.update(new Simple(1,'hello','world',['one', 'two']))
+                .then(() => store.update(new Simple(2, 'hello','friend',['three','one'])))
+                .then(() => store.update(new Simple(3, 'goodbye', 'Mr. Chips',['two','three'])))
+                .then(() => store.findAll(byTag, 'three'))
+                .then(result=> {
+                        expect(result).to.have.length(2);
+                        expect(result[0].uid).to.equal(2);
+                        expect(result[1].uid).to.equal(3);
+                    })
+                .then(()=>done(), done);
+    });
+*/
+    it('Creates multiple objects in store and deletes by index', (done) => {
 
         let store = getStore();
             
         store.update(new Simple(1,'hello','world'))
                 .then(() => store.update(new Simple(2, 'hello','friend')))
                 .then(() => store.update(new Simple(3, 'goodbye', 'Mr. Chips')))
-                .then(() => store.removeAll(byA, 'hello'))
-                .then(() => store.all)
+                .then(() => store.removeAll(byA, {a:'hello'}))
+                .then(() => store.all.toArray())
                 .then(result => {
                         expect(result).to.have.length(1);
                         expect(result[0].a).to.equal('goodbye');
@@ -114,7 +128,7 @@ describe('Store', () => {
             }
     );
 
-    it('can do bulk update in store', (done) => {
+    it('Can do bulk update in store', (done) => {
 
             let store = getStore();
 

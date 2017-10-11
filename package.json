@@ -26,16 +26,20 @@
   "homepage": "https://github.com/softwareplumbers/db-plumbing-mongo#readme",
   "devDependencies": {
     "chai": "^4.1.1",
+    "dotenv": "^4.0.0",
     "eslint": "^4.5.0",
     "ink-docstrap": "^1.3.0",
     "jsdoc": "^3.5.4",
     "mocha": "^3.5.0"
   },
   "dependencies": {
-    "db-plumbing-map": "^0.1.5",
-    "debug": "^3.0.1",
-    "eslint": "^4.6.0",
+    "db-plumbing-map": "^0.1.6",
+    "debug": "^3.1.0",
+    "eslint": "^4.8.0",
+    "jsdoc": "^3.5.5",
+    "mocha": "^3.5.3",
+    "mongo-query-format": "^0.1.2",
     "mongodb": "^2.2.31",
-    "typed-patch": "^0.2.7"
+    "typed-patch": "^0.2.11"
   }
 }
