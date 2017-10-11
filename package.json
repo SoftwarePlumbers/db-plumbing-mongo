@@ -1,6 +1,6 @@
 {
   "name": "db-plumbing-mongo",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Simple database interface to mongo, compatible with db-plumbing-map",
   "main": "store.js",
   "scripts": {

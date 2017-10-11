@@ -1,5 +1,5 @@
 
-const { Store, Query, $, Patch, Operations, Client, IndexMap } = require( '../store');
+const { Store, Query, $, Patch, Operations, Client, IndexMap, DoesNotExist } = require( '../store');
 const expect = require('chai').expect;
 const debug = require('debug')('db-plumbing-mongo~tests');
 const { MongoClient } = require('mongodb');
@@ -123,7 +123,7 @@ describe('Store', () => {
         store.update(new Simple(1,'hello','world'))
                 .then( () => store.find(2))
                 .then( () => chai.fail('call should not succeed') )
-                .then( null, err => expect(err).to.be.instanceof(Store.DoesNotExist) )
+                .then( null, err => expect(err).to.be.instanceof(DoesNotExist) )
                 .then( () => done(), done );
             }
     );
